@@ -14,7 +14,7 @@ from aml_analytics.risk import build_customer_scores
 
 
 def cap(df, limit, seed):
-    """Uniform sampling independent of labels, after complete history construction."""
+    """Choose output rows uniformly, independently of labels; replay all history."""
     return df.sample(n=min(len(df), limit), random_state=seed).sort_values("timestamp")
 
 
@@ -29,15 +29,23 @@ def main():
         parser.error("Row limits must be positive and target recall must be in (0, 1].")
     if not Path(args.data).exists():
         parser.error("Download HI-Small_Trans.csv into data/raw/ or use --data data/raw/demo_ibm_aml.csv.")
+    print("Loading and validating transactions...", flush=True)
     raw = load_ibm_transactions(args.data)
+    print(f"Validated {len(raw):,} rows.", flush=True)
     development, test_raw = temporal_split(raw, .8)
     train_raw, validation_raw = temporal_split(development, .75)
+    train_ids = set(cap(train_raw, args.max_train_rows, 42).txn_id)
+    validation_ids = set(cap(validation_raw, args.max_test_rows, 43).txn_id)
+    test_ids = set(cap(test_raw, args.max_test_rows, 44).txn_id)
     engineer = AMLFeatureEngineer()
-    train = cap(engineer.fit_transform(train_raw), args.max_train_rows, 42)
-    # One chronological replay preserves validation history before test observations.
-    future = engineer.transform(pd.concat([validation_raw, test_raw]))
-    validation = cap(future[future.txn_id.isin(validation_raw.txn_id)], args.max_test_rows, 43)
-    test = cap(future[future.txn_id.isin(test_raw.txn_id)], args.max_test_rows, 44)
+    print("Building training history; retaining sampled features...", flush=True)
+    train = engineer.fit_transform(train_raw, selected_ids=train_ids)
+    # Replay every row, but retain only the label-independent evaluation sample.
+    print("Replaying validation/test history...", flush=True)
+    future = engineer.transform(pd.concat([validation_raw, test_raw]),
+                                selected_ids=validation_ids | test_ids)
+    validation = future[future.txn_id.isin(validation_ids)]
+    test = future[future.txn_id.isin(test_ids)]
     for label, split in [("training", train), ("validation", validation), ("test", test)]:
         if split.is_laundering.nunique() != 2:
             raise ValueError(f"{label} requires both classes; increase row limits or supply more data.")

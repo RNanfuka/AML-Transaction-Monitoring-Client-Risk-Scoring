@@ -9,15 +9,24 @@ from aml_analytics.risk import build_customer_scores
 st.set_page_config(page_title="AML Transaction Monitoring", layout="wide")
 st.title("AML Transaction Monitoring & Client Risk Scoring")
 st.info("This portfolio project uses synthetic data and is not a production AML decisioning system. Model alerts indicate transactions for further review, not proof of money laundering.")
-reports = Path(__file__).resolve().parents[1] / "reports"
-if not all((reports / f).exists() for f in ["metrics.json", "predictions.csv", "customer_risk_scores.csv"]):
+local_reports = Path(__file__).resolve().parents[1] / "reports"
+snapshot = Path(__file__).resolve().parent / "dashboard_data"
+reports = local_reports if (local_reports / "predictions.csv").exists() else snapshot
+
+def report_path(name):
+    plain = reports / name
+    return plain if plain.exists() else reports / (name + ".gz")
+
+if not all(report_path(f).exists() for f in ["metrics.json", "predictions.csv", "customer_risk_scores.csv"]):
     st.warning("Run python scripts/train_model.py --data data/raw/demo_ibm_aml.csv")
     st.stop()
 metrics = json.loads((reports / "metrics.json").read_text())
-st.warning(metrics.get("dataset", "Unverified legacy reports: retrain before use."))
+st.caption("Data source: " + metrics.get("dataset", "Unverified legacy reports: retrain before use."))
+if reports == snapshot:
+    st.caption("Published snapshot of verified results. This app does not train models or process live transactions.")
 st.caption(f"Selected model: {metrics['selected_model']} · Operating threshold: {metrics['threshold']:.6f}. Model and threshold selected on validation; KPIs below use filtered test data.")
-pred = pd.read_csv(reports / "predictions.csv", parse_dates=["timestamp"])
-cust = pd.read_csv(reports / "customer_risk_scores.csv")
+pred = pd.read_csv(report_path("predictions.csv"), parse_dates=["timestamp"], float_precision="round_trip")
+cust = pd.read_csv(report_path("customer_risk_scores.csv"), float_precision="round_trip")
 formats = st.sidebar.multiselect("Payment format", sorted(pred.payment_format.unique()), default=sorted(pred.payment_format.unique()))
 tiers = st.sidebar.multiselect("Account risk tier", ["Low", "Medium", "High"], default=["Low", "Medium", "High"])
 dates = st.sidebar.date_input("Date range", value=(pred.timestamp.min().date(), pred.timestamp.max().date()))
@@ -56,19 +65,19 @@ display(pred[pred.model_flag == 1].sort_values("timestamp", ascending=False)[
     ["timestamp", "sender_id", "receiver_id", "amount_paid", "payment_currency", "payment_format", "risk_score"]].head(100))
 st.subheader("Threshold / False-Positive Trade-off")
 st.caption("Full validation period, independent of sidebar filters. The 80% validation recall target does not guarantee future recall.")
-if (reports / "threshold_curve.csv").exists():
-    curve = pd.read_csv(reports / "threshold_curve.csv")
+if report_path("threshold_curve.csv").exists():
+    curve = pd.read_csv(report_path("threshold_curve.csv"), float_precision="round_trip")
     st.plotly_chart(px.line(curve, x="threshold", y=["precision", "recall", "false_positive_rate", "alert_rate"]), width="stretch")
     display(curve)
 st.subheader("Model Performance")
 st.caption("Model comparison uses validation data. The selected model's test metrics appear above.")
-if (reports / "model_comparison.csv").exists():
-    display(pd.read_csv(reports / "model_comparison.csv"))
+if report_path("model_comparison.csv").exists():
+    display(pd.read_csv(report_path("model_comparison.csv")))
 display(pd.DataFrame([{k: m[k] for k in ["true_positives", "false_positives", "false_negatives", "true_negatives"]}]))
 st.subheader("Feature Importance / Key Risk Drivers")
 st.caption("Positive logistic coefficients increase the model score; negative coefficients decrease it. Amount deviation, velocity and repeated counterparties may influence prioritization. Importance describes model associations, not causes or proof of laundering. Scores are not calibrated probabilities.")
-if (reports / "feature_importance.csv").exists():
-    importance = pd.read_csv(reports / "feature_importance.csv")
+if report_path("feature_importance.csv").exists():
+    importance = pd.read_csv(report_path("feature_importance.csv"))
     chosen = st.selectbox("Explain model", importance.model.unique())
     subset = importance[importance.model == chosen]
     display(subset.loc[subset.importance.abs().sort_values(ascending=False).index].head(25))

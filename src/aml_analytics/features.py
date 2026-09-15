@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import deque
 from copy import deepcopy
 import math
 import numpy as np
@@ -16,6 +16,7 @@ class AMLFeatureEngineer:
 
     Amount history is currency-specific. transform copies fitted state so repeated
     inference is deterministic; it never updates the persisted training state.
+    selected_ids limits retained output rows, never the history used for features.
     """
     categorical_features = ["payment_format", "payment_currency", "receiving_currency"]
     numeric_features = [
@@ -32,27 +33,36 @@ class AMLFeatureEngineer:
         self.fit_transform(df)
         return self
 
-    def fit_transform(self, df):
+    def fit_transform(self, df, selected_ids=None):
         self.state_ = ({}, {})
-        out = self._run(df, self.state_)
+        out = self._run(df, self.state_, selected_ids)
         self.last_timestamp_ = df.timestamp.max()
         return out
 
-    def transform(self, df):
+    def transform(self, df, selected_ids=None):
         if not hasattr(self, "state_"):
             raise RuntimeError("Call fit() before transform().")
         if len(df) and df.timestamp.min() <= self.last_timestamp_:
             raise ValueError("Inference timestamps must be strictly after fitted history.")
-        return self._run(df, deepcopy(self.state_))
+        return self._run(df, deepcopy(self.state_), selected_ids)
 
-    def _run(self, df, state):
+    def _run(self, df, state, selected_ids=None):
         senders, receivers = state
         records = []
         for timestamp, batch in df.sort_values("timestamp", kind="stable").groupby("timestamp", sort=False):
-            for r in batch.to_dict("records"):
-                s = senders.setdefault((r["sender_id"], r["payment_currency"]), _account())
-                v = receivers.setdefault((r["receiver_id"], r["receiving_currency"]), _account())
-                while s["recent"] and s["recent"][0] < timestamp - pd.Timedelta(hours=24):
+            batch_records = batch.to_dict("records")
+            cutoff = timestamp - pd.Timedelta(hours=24)
+            for r in batch_records:
+                sk = (r["sender_id"], r["payment_currency"])
+                rk = (r["receiver_id"], r["receiving_currency"])
+                if sk not in senders:
+                    senders[sk] = _account()
+                if rk not in receivers:
+                    receivers[rk] = _account()
+                s, v = senders[sk], receivers[rk]
+                if selected_ids is not None and r["txn_id"] not in selected_ids:
+                    continue
+                while s["recent"] and s["recent"][0] < cutoff:
                     s["recent"].popleft()
                 std = math.sqrt(s["m2"] / (s["n"]-1)) if s["n"] > 1 else 0.
                 rstd = math.sqrt(v["m2"] / (v["n"]-1)) if v["n"] > 1 else 0.
@@ -70,7 +80,7 @@ class AMLFeatureEngineer:
                 ])))
                 records.append(r)
             # Equal-timestamp transactions cannot observe each other.
-            for r in batch.to_dict("records"):
+            for r in batch_records:
                 for account, amount in [
                     (senders[(r["sender_id"], r["payment_currency"])], r["amount_paid"]),
                     (receivers[(r["receiver_id"], r["receiving_currency"])], r["amount_received"]),

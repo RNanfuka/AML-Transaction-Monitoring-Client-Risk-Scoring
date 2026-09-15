@@ -102,3 +102,20 @@ def test_download_single_file(tmp_path, monkeypatch):
         module.main()
         assert (module.TARGET_DIR / cached.name).read_text() == "test fixture"
         assert download.call_args.kwargs["path"] == "HI-Small_Trans.csv"
+
+
+
+def test_sampled_feature_retention_preserves_full_history():
+    df = sample()
+    full = AMLFeatureEngineer().fit_transform(df)
+    engineer = AMLFeatureEngineer()
+    retained = engineer.fit_transform(df, selected_ids={"b", "c"})
+    pd.testing.assert_frame_equal(retained.reset_index(drop=True),
+                                  full[full.txn_id.isin(["b", "c"])].reset_index(drop=True))
+    assert engineer.state_[0][("s", "USD")]["n"] == 3
+    future = df.iloc[1:].copy()
+    future["timestamp"] += pd.Timedelta(days=3)
+    all_future = engineer.transform(future)
+    retained_future = engineer.transform(future, selected_ids={"c"})
+    pd.testing.assert_frame_equal(retained_future.reset_index(drop=True),
+                                  all_future[all_future.txn_id == "c"].reset_index(drop=True))

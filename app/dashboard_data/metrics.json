@@ -1,0 +1,38 @@
+{
+  "dataset": "IBM HI-Small (synthetic)",
+  "data_path": "data/raw/HI-Small_Trans.csv",
+  "selected_model": "hist_gradient_boosting",
+  "pr_auc": 0.2294030631859082,
+  "roc_auc": 0.9723020102810562,
+  "target_recall": 0.8,
+  "number_of_alerts": 2281,
+  "alert_rate": 0.038016666666666664,
+  "threshold": 0.026684940511746684,
+  "precision": 0.0398947829899167,
+  "recall": 0.8584905660377359,
+  "f1": 0.07624633431085044,
+  "false_positive_rate": 0.03656459745550473,
+  "true_positives": 91,
+  "false_positives": 2190,
+  "true_negatives": 57704,
+  "false_negatives": 15,
+  "train_rows": 150000,
+  "validation_rows": 60000,
+  "test_rows": 60000,
+  "test_positive_rate": 0.0017666666666666666,
+  "risk_tier_cutoffs": [
+    0.0004663042597108469,
+    0.0031338892699077853
+  ],
+  "selection_period": "validation",
+  "evaluation_period": "held-out test",
+  "dataset_summary": {
+    "rows": 5078345,
+    "laundering_rows": 5177,
+    "laundering_rate": 0.0010194266045335635,
+    "date_start": "2022-09-01 00:00:00",
+    "date_end": "2022-09-18 16:18:00",
+    "unique_senders": 496999,
+    "unique_receivers": 420640
+  }
+}

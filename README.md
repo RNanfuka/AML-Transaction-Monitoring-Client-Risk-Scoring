@@ -5,8 +5,8 @@ detect labelled suspicious activity while managing investigator alert volume.
 Python models, SQL analysis and a Streamlit dashboard connect transaction patterns
 to account prioritization and measurable false-positive trade-offs.
 
-**Current status: DEMO RESULTS only. These are pipeline checks, not portfolio
-performance metrics. IBM HI-Small has not been run.**
+**Current status: IBM HI-Small training and held-out evaluation completed.
+Results below use the IBM synthetic dataset with explicitly disclosed row caps.**
 
 ## Business problem and objectives
 
@@ -77,7 +77,8 @@ early stopping is disabled to preserve the chronological design.
 
 Timestamp boundaries keep equal-time transactions together. Approximate periods
 are 60% training, 20% validation and 20% test. Row caps uniformly sample each period
-independently of labels, after constructing history from the complete input.
+independently of labels. Feature construction updates history from the complete
+input while retaining only sampled output rows to reduce memory usage.
 The loader still reads the entire CSV into memory; row caps limit model workloads,
 not ingestion memory. All three periods must contain both labels.
 
@@ -196,30 +197,80 @@ Each training run replaces local reports and the model bundle. The dashboard
 identifies its input source. A filename identifies IBM input but does not
 authenticate dataset provenance; download from the intended source.
 
-## Verified results — DEMO RESULTS
+## Public dashboard deployment
 
-These are **not portfolio metrics**. Verified on the existing 2,600-row demo file,
-with 1,560 training, 520 validation and 520 test rows. Regenerating demo data uses
-the generator's defaults and can produce different results.
+The app supports a compact, static snapshot in `app/dashboard_data/` when local
+`reports/` files are absent. Prepare it after verifying an IBM training run:
 
-| Held-out demo result | Value |
+```bash
+python scripts/prepare_dashboard_data.py
+```
+
+The snapshot contains compressed derived test predictions (dashboard columns only),
+account scores, validation thresholds, metrics and importance. It does not include
+the 454 MB raw CSV or a fitted model. All reported test metrics retain the complete
+60,000-row evaluation sample. Local training reports take precedence when present.
+
+After committing and pushing the snapshot and app code, sign into Streamlit
+Community Cloud at https://share.streamlit.io/ and create an app with:
+
+- Repository: `RNanfuka/AML-Transaction-Monitoring-Client-Risk-Scoring`
+- Branch: `main`
+- Entrypoint: `app/streamlit_app.py`
+- Python: `3.11`
+
+The root `requirements.txt` installs the local package with `-e .`.
+Choose an available app subdomain and use the URL issued after successful
+deployment on your résumé. No public deployment URL has been verified yet.
+The published app must be publicly accessible for recruiters to open it.
+
+## Verified results — IBM HI-Small (synthetic)
+
+Verified locally on September 14, 2026 with Python 3.11 in `aml-analytics`.
+The complete input contains **5,078,345 transactions**, **5,177 laundering-labelled
+rows (0.101943%)**, **496,999 unique senders** and **420,640 unique receivers**.
+Dates span September 1, 2022 00:00 to September 18, 2022 16:18.
+
+All rows contribute to available chronological history. Uniform, label-independent
+samples contain 150,000 training rows, 60,000 validation rows and 60,000 test rows.
+The test sample has 106 positives (0.176667%); these are sampled test results,
+not metrics over all 5.08 million transactions.
+
+| Held-out IBM result | Value |
 |---|---:|
-| Selected model | Logistic Regression |
-| Operating threshold | 0.575619 |
-| PR-AUC (average precision) | 0.534260 |
-| ROC-AUC | 0.912300 |
-| Precision | 31.71% |
-| Recall | 65.00% |
-| F1 | 0.426230 |
-| False-positive rate | 5.60% |
-| Alerts / evaluated transactions | 41 / 520 |
-| Alert rate | 7.88% |
-| TP / FP / FN / TN | 13 / 28 / 7 / 472 |
+| Selected model | HistGradientBoostingClassifier |
+| Operating threshold | 0.026684940512 |
+| PR-AUC (average precision) | 0.229403 |
+| ROC-AUC | 0.972302 |
+| Precision | 3.9895% |
+| Recall | 85.8491% |
+| F1 | 0.076246 |
+| False-positive rate | 3.6565% |
+| Alerts / evaluated transactions | 2,281 / 60,000 |
+| Alert rate | 3.8017% |
+| TP / FP / FN / TN | 91 / 2,190 / 15 / 57,704 |
 
-The threshold met the validation recall target, but held-out recall fell to 65%.
-This illustrates why validation tuning must be separated from test evaluation.
-IBM results remain pending. Publish only numbers from a successfully verified
-IBM run and disclose row caps, class prevalence and evaluation periods.
+The operating threshold achieved 80.2817% recall on validation and was frozen
+before test evaluation. On test it detected 91 of 106 labelled transactions.
+However, 2,190 of 2,281 alerts were false positives: approximately 96% of alerts
+require review without a positive dataset label. This remains a substantial
+investigation workload.
+
+| Model | Validation PR-AUC | Validation alerts at target recall |
+|---|---:|---:|
+| HistGradientBoosting | 0.243791 | 1,986 |
+| Random Forest | 0.194048 | 1,300 |
+| Logistic Regression | 0.048361 | 1,522 |
+
+The automatic selection prioritizes PR-AUC. Random Forest produced fewer
+validation alerts at the same achieved recall and is worth considering when
+review capacity is the primary constraint. This comparison does not retune
+selection using test labels.
+
+Metrics were independently recomputed from exported predictions, and the saved
+model reproduced scores exactly when numeric CSV features were loaded with
+`float_precision="round_trip"`. Generated reports and models remain ignored by
+Git. Demo smoke checks run separately and do not replace these IBM results.
 
 ## Limitations and future improvements
 
