@@ -36,5 +36,3 @@ Then train on:
 python scripts/train_model.py --data data/raw/demo_ibm_aml.csv
 ```
 
-Do not report the demo-data metrics in your resume or portfolio. Use the IBM
-dataset for your final results.
