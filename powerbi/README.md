@@ -48,10 +48,4 @@ Visuals:
 - Currency mismatch monitoring
 - Cross-bank activity
 
-## Story to tell in an interview
-
-Do not focus only on model accuracy. Explain that AML detection is an operational
-decision problem. A model with slightly lower recall may be preferable if it
-substantially reduces false positives and therefore improves investigator capacity.
-
 Use the actual metrics from `reports/metrics.json` in the final portfolio screenshots.
